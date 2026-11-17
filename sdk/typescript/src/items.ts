@@ -3,7 +3,7 @@
 import type { ContentBlock as McpContentBlock } from "@modelcontextprotocol/sdk/types.js";
 
 /** The status of a command execution. */
-export type CommandExecutionStatus = "in_progress" | "completed" | "failed";
+export type CommandExecutionStatus = "in_progress" | "completed" | "failed" | "declined";
 
 /** A command executed by the agent. */
 export type CommandExecutionItem = {
@@ -13,8 +13,8 @@ export type CommandExecutionItem = {
   command: string;
   /** Aggregated stdout and stderr captured while the command was running. */
   aggregated_output: string;
-  /** Set when the command exits; omitted while still running. */
-  exit_code?: number;
+  /** The command's exit code, or null when no exit code is available. */
+  exit_code?: number | null;
   /** Current status of the command execution. */
   status: CommandExecutionStatus;
 };
@@ -29,15 +29,15 @@ export type FileUpdateChange = {
 };
 
 /** The status of a file change. */
-export type PatchApplyStatus = "completed" | "failed";
+export type PatchApplyStatus = "in_progress" | "completed" | "failed";
 
-/** A set of file changes by the agent. Emitted once the patch succeeds or fails. */
+/** A set of file changes by the agent. */
 export type FileChangeItem = {
   id: string;
   type: "file_change";
   /** Individual file changes that comprise the patch. */
   changes: FileUpdateChange[];
-  /** Whether the patch ultimately succeeded or failed. */
+  /** Current status of the patch. */
   status: PatchApplyStatus;
 };
 

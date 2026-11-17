@@ -20,7 +20,7 @@ const handleItemCompleted = (item: ThreadItem): void => {
       console.log(`Reasoning: ${item.text}`);
       break;
     case "command_execution": {
-      const exitText = item.exit_code !== undefined ? ` Exit code ${item.exit_code}.` : "";
+      const exitText = item.exit_code != null ? ` Exit code ${item.exit_code}.` : "";
       console.log(`Command ${item.command} ${item.status}.${exitText}`);
       break;
     }

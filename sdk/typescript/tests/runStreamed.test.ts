@@ -1,9 +1,13 @@
 import { describe, expect, it } from "@jest/globals";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
-import { ThreadEvent } from "../src/index";
+import type { CommandExecutionItem, FileChangeItem, ThreadEvent, ThreadItem } from "../src/index";
 
 import {
   assistantMessage,
+  exec_command_call as execCommandCall,
   responseCompleted,
   responseStarted,
   sse,
@@ -59,6 +63,59 @@ describe("Codex", () => {
     } finally {
       cleanup();
       await close();
+    }
+  });
+
+  it("streams in-progress command and file change items", async () => {
+    const patchCall = {
+      type: "response.output_item.done",
+      item: {
+        type: "custom_tool_call",
+        call_id: "patch_1",
+        name: "apply_patch",
+        input: "*** Begin Patch\n*** Add File: hello.txt\n+hello\n*** End Patch",
+      },
+    };
+    const { url, close } = await startResponsesTestProxy({
+      responseBodies: [
+        sse(responseStarted(), execCommandCall(), patchCall, responseCompleted()),
+        sse(responseStarted(), assistantMessage("Done"), responseCompleted()),
+      ],
+    });
+    const { client, cleanup } = createMockClient(url);
+    const workingDirectory = await mkdtemp(path.join(tmpdir(), "codex-streamed-items-"));
+
+    try {
+      const thread = client.startThread({
+        workingDirectory,
+        sandboxMode: "workspace-write",
+        skipGitRepoCheck: true,
+      });
+      const { events } = await thread.runStreamed("Run the command and apply the patch");
+      const started: ThreadItem[] = [];
+      for await (const event of events) {
+        if (event.type === "item.started") {
+          started.push(event.item);
+        }
+      }
+
+      expect(started).toContainEqual(
+        expect.objectContaining({
+          type: "command_execution",
+          status: "in_progress",
+          exit_code: null,
+        } satisfies Partial<CommandExecutionItem>),
+      );
+      expect(started).toContainEqual(
+        expect.objectContaining({
+          type: "file_change",
+          status: "in_progress",
+        } satisfies Partial<FileChangeItem>),
+      );
+    } finally {
+      cleanup();
+      await close();
+      await rm(workingDirectory, { recursive: true, force: true });
     }
   });
 
