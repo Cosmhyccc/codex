@@ -46,6 +46,30 @@ function createEarlyExitChild(exitCode = 2): FakeChildProcess {
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe("CodexExec", () => {
+  it("preserves Unicode line separators in JSONL records across stdout chunks", async () => {
+    const { CodexExec } = await import("../src/exec");
+    const child = new FakeChildProcess();
+    spawnMock.mockReturnValue(child as unknown as child_process.ChildProcess);
+
+    const record = JSON.stringify({ text: "first\u2028second\u2029third" });
+    const bytes = Buffer.from(`${record}\r\n{}\n[]`);
+    const split = bytes.indexOf("\u2028") + 1;
+    setImmediate(() => {
+      child.stdout.write(bytes.subarray(0, split));
+      setImmediate(() => {
+        child.stdout.end(bytes.subarray(split));
+        child.stderr.end();
+        child.emit("exit", 0, null);
+      });
+    });
+
+    const lines: string[] = [];
+    for await (const line of new CodexExec("codex").run({ input: "hi" })) {
+      lines.push(line);
+    }
+    expect(lines).toEqual([record, "{}", "[]"]);
+  });
+
   it("rejects when exit happens before stdout closes", async () => {
     const { CodexExec } = await import("../src/exec");
     const child = createEarlyExitChild();

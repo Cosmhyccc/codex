@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import path from "node:path";
-import readline from "node:readline";
 import { createRequire } from "node:module";
 
 import type { CodexConfigObject, CodexConfigValue } from "./codexOptions";
@@ -235,16 +234,8 @@ export class CodexExec {
       },
     );
 
-    const rl = readline.createInterface({
-      input: child.stdout,
-      crlfDelay: Infinity,
-    });
-
     try {
-      for await (const line of rl) {
-        // `line` is a string (Node sets default encoding to utf8 for readline)
-        yield line as string;
-      }
+      yield* readJsonLines(child.stdout.setEncoding("utf8"));
 
       if (spawnError) throw spawnError;
       const { code, signal } = await exitPromise;
@@ -254,7 +245,6 @@ export class CodexExec {
         throw new Error(`Codex Exec exited with ${detail}: ${stderrBuffer.toString("utf8")}`);
       }
     } finally {
-      rl.close();
       child.removeAllListeners();
       try {
         if (!child.killed) child.kill();
@@ -263,6 +253,25 @@ export class CodexExec {
       }
     }
   }
+}
+
+async function* readJsonLines(chunks: AsyncIterable<string>): AsyncGenerator<string> {
+  const fragments: string[] = [];
+  for await (const chunk of chunks) {
+    // Only LF delimits JSONL records. Unicode line separators can occur inside JSON strings.
+    const lines = chunk.split("\n");
+    const remainder = lines.pop();
+    for (let line of lines) {
+      if (fragments.length > 0) {
+        fragments.push(line);
+        line = fragments.join("");
+        fragments.length = 0;
+      }
+      yield line.endsWith("\r") ? line.slice(0, -1) : line;
+    }
+    if (remainder) fragments.push(remainder);
+  }
+  if (fragments.length > 0) yield fragments.join("");
 }
 
 function serializeConfigOverrides(configOverrides: CodexConfigObject): string[] {
